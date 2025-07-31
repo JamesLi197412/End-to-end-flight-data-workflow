@@ -1,7 +1,6 @@
 package com.jamesli.config;
 
 public final class Constants {
-    public final class Constants {
         private Constants() {}
         // -- kafka related constants
         public static final String kafkaPort = "9092";
@@ -13,5 +12,4 @@ public final class Constants {
         public static final String S3_PATH_PREFIX_DATE_FORMAT = "yyyy/MM/dd/";
         public static final String S3BUCKET = "flightintel";
 
-    }
 }
