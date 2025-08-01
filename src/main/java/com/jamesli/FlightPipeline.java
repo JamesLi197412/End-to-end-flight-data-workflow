@@ -1,6 +1,5 @@
 package com.jamesli;
 
-
 import com.jamesli.config.Constants;
 import com.jamesli.kafka.KafkaManager;
 import com.jamesli.process.AmadeusProcess;
@@ -29,7 +28,6 @@ public class FlightPipeline {
         JSONObject amadeusProps = env.readProperties(homeDir + "/.zshrc", "amadeus");
         JSONObject aviationProps = env.readProperties(homeDir + "/.zshrc", "aviation");
         JSONObject awsProps = env.readProperties(homeDir + "/.zshrc", "AWS");
-        System.out.println(awsProps);
 
         // initialise the Kafka
         KafkaManager kafkaManager = new KafkaManager(Constants.kafkaPort, Constants.zooKeeperPort);

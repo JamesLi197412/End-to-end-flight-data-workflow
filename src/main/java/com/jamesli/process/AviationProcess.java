@@ -195,6 +195,9 @@ public class AviationProcess {
                 .config("spark.hadoop.fs.s3a.access.key", accessKey)
                 .config("spark.hadoop.fs.s3a.secret.key", secretKey)
                 .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+                .config("spark.sql.shuffle.partitions", "8")
+                .config("spark.dynamicAllocation.enabled", "true")
+                .config("spark.dynamicAllocation.maxExecutors", "20")
                 .master("local[*]")
                 .getOrCreate();
     }

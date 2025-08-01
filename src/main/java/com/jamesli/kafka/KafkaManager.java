@@ -10,6 +10,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.errors.InterruptException;
 
 
 import org.apache.zookeeper.server.ZooKeeperServerMain;
@@ -33,6 +34,7 @@ public class KafkaManager {
     private KafkaProducer<String, String> producer;
     private ZooKeeperServerMain zooKeeperServer;
     private Thread zooKeeperThread;
+    private final Properties producerProps;
 
     private final String kafkaPort;
     private final String zooKeeperPort;
@@ -42,14 +44,13 @@ public class KafkaManager {
 
     private String kafkaHome;
 
-
     public KafkaManager(String kafkaPort, String zooKeeperPort) {
         this.kafkaPort = kafkaPort;
         this.zooKeeperPort = zooKeeperPort;
         this.logDir = new File("logs/kafka");
         this.zooKeeperDir = new File("logs/zookeeper");
-
         this.kafkaHome = "/Library/Java/JavaVirtualMachines/kafka_2.12-3.9.0";
+        this.producerProps = createProducerProperties();
     }
 
     /*
@@ -60,18 +61,9 @@ public class KafkaManager {
         Thread.sleep(2000);
         startKafka();
         Thread.sleep(2000);
-        //createProducer();
+        this.producer = createProducer();
     }
 
-    private void createProducer(){
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaPort);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producer = new KafkaProducer<>(props);
-        logger.info("Kafka producer created");
-
-    }
     /*
         Initialise the Zookeeper
      */
@@ -116,52 +108,48 @@ public class KafkaManager {
         }
     }
 
-    private void producerfunction(String topic, String key, String value) {
+    private KafkaProducer<String, String> createProducer() {
+        return new KafkaProducer<>(producerProps);
+    }
+
+    private Properties createProducerProperties(){
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaPort);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producer = new KafkaProducer<>(props);
+        props.put(ProducerConfig.ACKS_CONFIG, "1");
+        props.put(ProducerConfig.RETRIES_CONFIG, 3);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
+        props.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);
+        props.put("metadata.max.age.ms", "300000"); // 5 minutes
+        //props.put("compression.type", "gzip");
         logger.info("Kafka producer created");
-
-        ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
-        try {
-            Future<RecordMetadata> future = producer.send(record); // Use Future
-            RecordMetadata metadata = future.get(5, TimeUnit.SECONDS); // Get the result from the Future
-            System.out.println("Message sent to topic: " + metadata.topic() +
-                    " partition: " + metadata.partition() +
-                    " offset: " + metadata.offset());
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            System.err.println("Error sending message: " + e.getMessage());
-        }
+        return props;
     }
 
     public void send(String topic, String key, String value){
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaPort);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producer = new KafkaProducer<>(props);
-        logger.info("Kafka producer created");
-
         if (producer == null) {
             createProducer();
         }
+        try {
+            // Create a new record
+            ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
 
-        // Create a new record
-        ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
+            // Send the record
+            producer.send(record, (metadata, exception) -> {
+                if (exception == null) {
+                    logger.info("Message sent to topic: " + metadata.topic() + " partition: " + metadata.partition() + " offset: " + metadata.offset());
+                } else {
+                    logger.error("Error while producing message to topic: " + topic, exception);
+                }
+            });
 
-        // Send the record
-        producer.send(record, (metadata, exception) -> {
-            if (exception == null) {
-                logger.info("Message sent to topic: " + metadata.topic() + " partition: " + metadata.partition() + " offset: " + metadata.offset());
-            } else {
-                logger.error("Error while producing message to topic: " + topic, exception);
-            }
-        });
-
-        // Flush the producer to ensure all messages are sent
-        producer.flush();
+            // Flush the producer to ensure all messages are sent
+            producer.flush();
+        }catch (InterruptException e){
+            System.err.println("Interrupted while sending message to Kafka: " + e.getMessage());
+        }
     }
 
     public boolean isKafkaAvailable(){
@@ -220,19 +208,6 @@ public class KafkaManager {
         return "localhost:" + this.kafkaPort;
     }
 
-    public void createTopic(String topicName, int partitions, short replicationFactor) {
-        Properties adminProps = new Properties();
-        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getBootstrapServers());
-
-        try (AdminClient adminClient = AdminClient.create(adminProps)) {
-            NewTopic topic = new NewTopic(topicName, partitions, replicationFactor);
-            adminClient.createTopics(Collections.singletonList(topic));
-            System.out.println("Topic '" + topicName + "' created successfully");
-        } catch (Exception e) {
-            System.err.println("Failed to create topic: " + e.getMessage());
-        }
-    }
-
     public void restart() {
         stop();
         try{
@@ -241,5 +216,4 @@ public class KafkaManager {
             logger.error("Failed to restart Kafka and Zookeeper", e);
         }
     }
-
 }
